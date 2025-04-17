@@ -18,6 +18,7 @@ services:
       retries: 5
     networks:
       - taifas-net
+
   api:
     build:
       context: ./api
@@ -43,6 +44,7 @@ services:
       retries: 5
     networks:
       - taifas-net
+
   auth:
     build:
       context: ./auth
@@ -65,6 +67,7 @@ services:
       retries: 5
     networks:
       - taifas-net
+
   streaming:
     build:
       context: ./streaming
@@ -84,6 +87,18 @@ services:
       retries: 5
     networks:
       - taifas-net
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: web
+    volumes:
+      - ./web:/app
+    command: ["npx", "tailwindcss", "-i", "./src/index.css", "-o", "./public/output.css", "--watch"]
+    networks:
+      - taifas-net
+
   mongodb:
     image: mongo:5.0
     container_name: mongodb
@@ -98,6 +113,7 @@ services:
       retries: 5
     networks:
       - taifas-net
+
   redis:
     image: redis:6.2
     container_name: redis
@@ -108,6 +124,7 @@ services:
       retries: 5
     networks:
       - taifas-net
+
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -126,10 +143,12 @@ services:
       retries: 5
     networks:
       - taifas-net
+
 networks:
   taifas-net:
     driver: bridge
     name: taifas-net
+
 volumes:
   mongodb-data:
   minio-data:
