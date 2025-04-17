@@ -1,4 +1,4 @@
-FROM node:20-bullseye
+FROM node:latest
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
