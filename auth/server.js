@@ -12,20 +12,17 @@ app.use(express.json());
 const { MONGO_URI, REDIS_HOST, REDIS_PORT, JWT_SECRET } = process.env;
 const redis = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
 
-// MongoDB connection
 mongoose.set('strictQuery', false);
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// User schema
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true },
   password: String,
 });
 const User = mongoose.model('User', userSchema);
 
-// Register
 app.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -39,7 +36,6 @@ app.post('/register', async (req, res) => {
   }
 });
 
-// Login
 app.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -55,7 +51,6 @@ app.post('/login', async (req, res) => {
   }
 });
 
-// Verify token
 app.post('/verify', async (req, res) => {
   try {
     const { token } = req.body;
@@ -68,7 +63,6 @@ app.post('/verify', async (req, res) => {
   }
 });
 
-// Health check endpoint
 app.get('/health', async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();
@@ -76,7 +70,7 @@ app.get('/health', async (req, res) => {
     res.status(200).json({ status: 'ok', service: 'auth' });
   } catch (err) {
     console.error('Health check failed:', err);
-    res.status(500).json({ status: 'error', error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
