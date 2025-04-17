@@ -1,0 +1,83 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const Redis = require('ioredis');
+const cors = require('cors');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const { MONGO_URI, REDIS_HOST, REDIS_PORT, JWT_SECRET } = process.env;
+const redis = new Redis({ host: REDIS_HOST, port: REDIS_PORT });
+
+// MongoDB connection
+mongoose.set('strictQuery', false);
+mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
+
+// User schema
+const userSchema = new mongoose.Schema({
+  username: { type: String, unique: true },
+  password: String,
+});
+const User = mongoose.model('User', userSchema);
+
+// Register
+app.post('/register', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    res.json({ message: 'User registered' });
+  } catch (err) {
+    res.status(500).json({ error: 'Registration failed' });
+  }
+});
+
+// Login
+app.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user || !(await bcrypt.compare(password, user.password))) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '1h' });
+    await redis.setex(`session:${username}`, 3600, token);
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Verify token
+app.post('/verify', async (req, res) => {
+  try {
+    const { token } = req.body;
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const storedToken = await redis.get(`session:${decoded.username}`);
+    if (storedToken !== token) return res.status(401).json({ error: 'Invalid session' });
+    res.json({ user: decoded });
+  } catch (err) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// Health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    await redis.ping();
+    res.status(200).json({ status: 'ok', service: 'auth' });
+  } catch (err) {
+    console.error('Health check failed:', err);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.listen(3001, () => console.log('Auth service running on port 3001'));

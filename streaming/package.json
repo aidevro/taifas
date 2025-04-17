@@ -1,0 +1,11 @@
+{
+  "name": "taifas-streaming",
+  "version": "1.0.0",
+  "main": "server.js",
+  "dependencies": {
+    "socket.io": "^4.5.1",
+    "ioredis": "^5.0.0",
+    "axios": "^0.27.2",
+    "express": "^4.17.1"
+  }
+}
