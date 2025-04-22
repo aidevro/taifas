@@ -1,0 +1,16 @@
+entryPoints:
+  web:
+    address: ":80"
+
+api:
+  dashboard: true
+  insecure: true
+
+providers:
+  docker:
+    exposedByDefault: false
+    network: taifas-net
+  file:
+    filename: /etc/traefik/traefik_dynamic.yml
+
+ping: {}

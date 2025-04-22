@@ -1,120 +1,126 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import io from "socket.io-client";
 
-const Meeting = ({ match }) => {
-    const { id: meetingId } = match.params;
-    const [participants, setParticipants] = useState([]);
-    const [messages, setMessages] = useState([]);
-    const [message, setMessage] = useState("");
-    const [breakoutRooms, setBreakoutRooms] = useState([]);
-    const [error, setError] = useState("");
-    const socketRef = useRef();
-    const localVideoRef = useRef();
-    const remoteVideosRef = useRef({});
+export default function Meeting() {
+  const { id: meetingId } = useParams();
+  const navigate = useNavigate();
 
-    useEffect(() => {
-        socketRef.current = io("http://158.179.43.153", { path: "/socket.io" });
-        const token = localStorage.getItem("token");
-        const username = "user"; // Replace with actual username from auth
+  const localVideoRef = useRef(null);
+  const socketRef = useRef(null);
+  const [participants, setParticipants] = useState([]);
+  const [message, setMessage] = useState("");
+  const [chat, setChat] = useState([]);
+  const [cameraOn, setCameraOn] = useState(true);
+  const [micOn, setMicOn] = useState(true);
 
-        socketRef.current.emit("join-meeting", { meetingId, username, token });
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return navigate("/");
 
-        socketRef.current.on("user-joined", ({ userId }) => {
-            setParticipants((prev) => [...prev, { id: userId, username: "User" + userId }]);
-        });
+    // connect to signaling server
+    socketRef.current = io("/", { path: "/socket.io" });
 
-        socketRef.current.on("participants-updated", (users) => {
-            setParticipants(users);
-        });
+    // join room
+    socketRef.current.emit("join-meeting", {
+      meetingId,
+      username: "user", // update to actual username if available
+      token,
+    });
 
-        socketRef.current.on("chat-message", ({ username, message }) => {
-            setMessages((prev) => [...prev, { username, message }]);
-        });
+    // handle events
+    socketRef.current.on("participants-updated", (users) => {
+      setParticipants(users);
+    });
 
-        socketRef.current.on("breakout-room-created", ({ roomName }) => {
-            setBreakoutRooms((prev) => [...prev, roomName]);
-        });
+    socketRef.current.on("chat-message", ({ username, message }) => {
+      setChat((prev) => [...prev, { username, message }]);
+    });
 
-        socketRef.current.on("breakout-room-updated", (users) => {
-            setParticipants(users);
-        });
+    // get video/audio
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+    });
 
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
-            localVideoRef.current.srcObject = stream;
-        });
-
-        return () => socketRef.current.disconnect();
-    }, [meetingId]);
-
-    const sendMessage = () => {
-        if (message) {
-            socketRef.current.emit("chat-message", { meetingId, message, username: "user" });
-            setMessage("");
-        }
+    return () => {
+      socketRef.current.disconnect();
     };
+  }, [meetingId, navigate]);
 
-    const createBreakoutRoom = () => {
-        const roomName = `Room${breakoutRooms.length + 1}`;
-        socketRef.current.emit("create-breakout-room", { meetingId, roomName, token: localStorage.getItem("token") });
-    };
+  const sendMessage = () => {
+    if (message.trim()) {
+      socketRef.current.emit("chat-message", {
+        meetingId,
+        username: "user",
+        message,
+      });
+      setMessage("");
+    }
+  };
 
-    const joinBreakoutRoom = (roomName) => {
-        socketRef.current.emit("join-breakout-room", { meetingId, roomName, token: localStorage.getItem("token") });
-    };
+  const toggleCamera = () => setCameraOn((prev) => !prev);
+  const toggleMic = () => setMicOn((prev) => !prev);
 
-    return (
-        <div className="min-h-screen bg-zoomGray p-8">
-            <div className="max-w-7xl mx-auto bg-zoomWhite p-6 rounded-lg shadow-lg flex">
-                <div className="w-3/4">
-                    <h2 className="text-2xl font-bold text-zoomBlue mb-4">Meeting: {meetingId}</h2>
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                        <video ref={localVideoRef} autoPlay muted className="w-full rounded-lg border"></video>
-                        {participants.map((p) => (
-                            <video key={p.id} ref={(el) => (remoteVideosRef.current[p.id] = el)} autoPlay className="w-full rounded-lg border"></video>
-                        ))}
-                    </div>
-                    <div className="flex space-x-2">
-                        <button className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700">Toggle Video</button>
-                        <button className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700">Toggle Audio</button>
-                        <button className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700">Share Screen</button>
-                        <button onClick={createBreakoutRoom} className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700">Create Breakout Room</button>
-                    </div>
-                </div>
-                <div className="w-1/4 pl-4">
-                    <h3 className="text-lg font-bold text-zoomBlue mb-2">Participants</h3>
-                    <ul className="mb-4">
-                        {participants.map((p) => (
-                            <li key={p.id} className="text-gray-700">{p.username}</li>
-                        ))}
-                    </ul>
-                    <h3 className="text-lg font-bold text-zoomBlue mb-2">Breakout Rooms</h3>
-                    <ul className="mb-4">
-                        {breakoutRooms.map((room) => (
-                            <li key={room} className="text-gray-700">
-                                {room}
-                                <button onClick={() => joinBreakoutRoom(room)} className="ml-2 text-zoomBlue hover:underline">Join</button>
-                            </li>
-                        ))}
-                    </ul>
-                    <h3 className="text-lg font-bold text-zoomBlue mb-2">Chat</h3>
-                    <div className="h-48 overflow-y-auto mb-2 p-2 border rounded-lg">
-                        {messages.map((m, i) => (
-                            <p key={i} className="text-gray-700">{m.username}: {m.message}</p>
-                        ))}
-                    </div>
-                    <div className="flex">
-                        <input
-                            type="text"
-                            value={message}
-                            onChange={(e) => setMessage(e.target.value)}
-                            className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-zoomBlue"
-                        />
-                        <button onClick={sendMessage} className="ml-2 bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700">Send</button>
-                    </div>
-                </div>
-            </div>
+  return (
+    <div className="min-h-screen bg-gray-900 text-gray-100 p-6">
+      <h1 className="text-2xl font-bold text-violet-400 mb-4">Meeting: {meetingId}</h1>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex-1 space-y-4">
+          <video
+            ref={localVideoRef}
+            autoPlay
+            muted
+            className="w-full rounded-lg border border-gray-700"
+          />
+
+          <div className="flex gap-4 justify-center">
+            <button onClick={toggleCamera} className="bg-violet-600 px-4 py-2 rounded">
+              {cameraOn ? "Turn Off Camera" : "Turn On Camera"}
+            </button>
+            <button onClick={toggleMic} className="bg-violet-600 px-4 py-2 rounded">
+              {micOn ? "Mute" : "Unmute"}
+            </button>
+          </div>
+
+          <div className="bg-gray-800 rounded p-4">
+            <h2 className="text-lg font-semibold mb-2">Participants</h2>
+            <ul className="space-y-1 text-sm">
+              {participants.map((user) => (
+                <li key={user.id} className="text-violet-300">
+                  {user.username || "User"}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-    );
-};
 
-export default Meeting;
+        <div className="w-full lg:w-1/3 bg-gray-800 rounded p-4 space-y-4">
+          <h2 className="text-lg font-semibold">Chat</h2>
+          <div className="h-64 overflow-y-auto space-y-2">
+            {chat.map((msg, idx) => (
+              <div key={idx}>
+                <span className="font-bold text-violet-300">{msg.username}:</span>{" "}
+                {msg.message}
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 px-2 py-1 rounded bg-gray-700"
+              placeholder="Type a message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            />
+            <button onClick={sendMessage} className="bg-violet-600 px-4 py-1 rounded">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

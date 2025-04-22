@@ -1,7 +1,8 @@
 FROM node:16-bullseye
 WORKDIR /app
 COPY package*.json ./
-COPY node_modules ./node_modules
+#COPY node_modules ./node_modules
+RUN npm install dotenv && npm install
 COPY . .
 EXPOSE 3002
 CMD ["node", "server.js"]

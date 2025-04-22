@@ -1,0 +1,56 @@
+services:
+  traefik:
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  api:
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  auth:
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  streaming:
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3002/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  mongodb:
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  minio:
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5

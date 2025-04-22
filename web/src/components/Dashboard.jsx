@@ -1,63 +1,129 @@
-import React, { useState } from "react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
 
-const Dashboard = () => {
-    const [meetingId, setMeetingId] = useState("");
-    const [error, setError] = useState("");
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [username, setUsername] = useState("");
+  const [meetingId, setMeetingId] = useState("");
+  const [photo, setPhoto] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
-    const handleCreateMeeting = async () => {
-        try {
-            const token = localStorage.getItem("token");
-            const response = await axios.post(
-                "http://158.179.43.153/api/meetings",
-                { title: "New Meeting" },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
-            window.location.href = `/meeting/${response.data.meetingId}`;
-        } catch (err) {
-            setError("Failed to create meeting");
-        }
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) return navigate("/");
+    const userData = JSON.parse(localStorage.getItem("user") || "{}");
+    if (userData.username) setUsername(userData.username);
+    if (userData.photo) setPhoto(userData.photo);
+  }, [navigate]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    navigate("/");
+  };
+
+  const handleNameChange = () => {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    user.username = username;
+    localStorage.setItem("user", JSON.stringify(user));
+    alert("Name updated!");
+  };
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPhoto(reader.result);
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      user.photo = reader.result;
+      localStorage.setItem("user", JSON.stringify(user));
     };
+    reader.readAsDataURL(file);
+  };
 
-    const handleJoinMeeting = () => {
-        if (meetingId) {
-            window.location.href = `/meeting/${meetingId}`;
-        } else {
-            setError("Enter a meeting ID");
-        }
-    };
+  const handleCreateMeeting = async () => {
+    const token = localStorage.getItem("token");
+    const res = await fetch("/api/create-meeting", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (data.meetingId) {
+      navigate(\`/meeting/\${data.meetingId}\`);
+    } else {
+      alert("Failed to create meeting");
+    }
+  };
 
-    return (
-        <div className="min-h-screen bg-zoomGray p-8">
-            <div className="max-w-4xl mx-auto bg-zoomWhite p-6 rounded-lg shadow-lg">
-                <h2 className="text-3xl font-bold text-zoomBlue mb-6">Taifas Dashboard</h2>
-                {error && <p className="text-red-500 mb-4">{error}</p>}
-                <div className="flex space-x-4 mb-6">
-                    <button
-                        onClick={handleCreateMeeting}
-                        className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-                    >
-                        Create Meeting
-                    </button>
-                    <div className="flex space-x-2">
-                        <input
-                            type="text"
-                            value={meetingId}
-                            onChange={(e) => setMeetingId(e.target.value)}
-                            placeholder="Enter Meeting ID"
-                            className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-zoomBlue"
-                        />
-                        <button
-                            onClick={handleJoinMeeting}
-                            className="bg-zoomBlue text-zoomWhite px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-                        >
-                            Join Meeting
-                        </button>
-                    </div>
-                </div>
-            </div>
+  const handleJoinMeeting = () => {
+    if (meetingId.trim()) {
+      navigate(\`/meeting/\${meetingId}\`);
+    }
+  };
+
+  return (
+    <motion.div
+      className="min-h-screen bg-gray-900 text-gray-100 p-6"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+    >
+      <div className="max-w-xl mx-auto mt-8 bg-gray-800 p-6 rounded-xl shadow-lg">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-violet-400">Dashboard</h2>
+          <div className="flex gap-2">
+            <Button onClick={() => setShowSettings(!showSettings)} variant="outline">
+              Settings
+            </Button>
+            <Button variant="ghost" onClick={handleLogout} className="text-red-400">
+              Logout
+            </Button>
+          </div>
         </div>
-    );
-};
 
-export default Dashboard;
+        {showSettings && (
+          <div className="mt-6">
+            <div className="flex flex-col items-center gap-4">
+              {photo ? (
+                <img src={photo} alt="Profile" className="w-20 h-20 rounded-full object-cover" />
+              ) : (
+                <div className="w-20 h-20 rounded-full bg-gray-700 flex items-center justify-center text-sm text-gray-400">
+                  No Photo
+                </div>
+              )}
+              <input type="file" accept="image/*" onChange={handlePhotoUpload} />
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <label className="block text-sm text-gray-300">Your Name</label>
+              <Input value={username} onChange={(e) => setUsername(e.target.value)} />
+              <Button onClick={handleNameChange} className="bg-violet-500 hover:bg-violet-600">
+                Update Name
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {!showSettings && (
+          <div className="mt-8 space-y-3">
+            <h3 className="text-lg font-semibold text-violet-400">Meeting Controls</h3>
+            <Button onClick={handleCreateMeeting} className="w-full bg-violet-500 hover:bg-violet-600">
+              Create Meeting
+            </Button>
+            <Input
+              placeholder="Enter meeting ID to join"
+              value={meetingId}
+              onChange={(e) => setMeetingId(e.target.value)}
+            />
+            <Button onClick={handleJoinMeeting} variant="outline" className="w-full border-violet-400 text-violet-400 hover:bg-violet-900">
+              Join Meeting
+            </Button>
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}

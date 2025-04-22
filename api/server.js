@@ -9,14 +9,14 @@ app.use(cors());
 app.use(express.json());
 
 const { MONGO_URI, JWT_SECRET, AUTH_SERVICE_URL } = process.env;
+const morgan = require('morgan');
+app.use(morgan('dev')); // 'dev' format is great for local development
 
-// MongoDB connection
 mongoose.set('strictQuery', false);
 mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => console.log('Connected to MongoDB'))
   .catch((err) => console.error('MongoDB connection error:', err));
 
-// Meeting schema
 const meetingSchema = new mongoose.Schema({
   meetingId: { type: String, unique: true },
   creator: String,
@@ -25,7 +25,44 @@ const meetingSchema = new mongoose.Schema({
 });
 const Meeting = mongoose.model('Meeting', meetingSchema);
 
-// Middleware to verify JWT
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+// 🧠 Proxy /api/register to auth
+app.post('/register', async (req, res) => {
+  try {
+    const response = await axios.post(`${AUTH_SERVICE_URL}/register`, req.body);
+    res.status(response.status).json(response.data);
+  } catch (err) {
+    console.error('Register error:', err.message);
+    res.status(500).json({ error: 'Register proxy failed' });
+  }
+});
+
+// 🧠 Proxy /api/login to auth
+app.post('/login', async (req, res) => {
+  try {
+    const response = await axios.post(`${AUTH_SERVICE_URL}/login`, req.body);
+    res.status(response.status).json(response.data);
+  } catch (err) {
+    console.error('Login error:', err.message);
+    res.status(500).json({ error: 'Login proxy failed' });
+  }
+});
+
+// 🧠 Proxy /api/verify to auth
+app.post('/verify', async (req, res) => {
+  try {
+    const response = await axios.post(`${AUTH_SERVICE_URL}/verify`, req.body);
+    res.status(response.status).json(response.data);
+  } catch (err) {
+    console.error('Verify error:', err.message);
+    res.status(500).json({ error: 'Verify proxy failed' });
+  }
+});
+
 const verifyToken = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
@@ -38,7 +75,6 @@ const verifyToken = async (req, res, next) => {
   }
 };
 
-// Create meeting
 app.post('/create-meeting', verifyToken, async (req, res) => {
   try {
     const meetingId = Math.random().toString(36).substring(2, 10);
@@ -54,7 +90,6 @@ app.post('/create-meeting', verifyToken, async (req, res) => {
   }
 });
 
-// Join meeting
 app.post('/join-meeting', verifyToken, async (req, res) => {
   try {
     const { meetingId } = req.body;
@@ -70,7 +105,6 @@ app.post('/join-meeting', verifyToken, async (req, res) => {
   }
 });
 
-// Health check endpoint
 app.get('/health', async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();

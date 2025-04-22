@@ -1,0 +1,12 @@
+http:
+  middlewares:
+    auth:
+      basicAuth:
+        users:
+          - "admin:$apr1$Pipilica22EncryptedHere" # replace with real bcrypt hash
+  routers:
+    catchall:
+      rule: "PathPrefix(`/`)"
+      service: api
+      entryPoints:
+        - web
