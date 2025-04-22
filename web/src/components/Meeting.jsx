@@ -1,125 +1,192 @@
-import React, { useEffect, useRef, useState } from "react";
+// src/components/Meeting.jsx
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import io from "socket.io-client";
+import Peer from "simple-peer";
+
+const socket = io("/socket.io", { path: "/socket.io", transports: ["websocket"] });
 
 export default function Meeting() {
-  const { id: meetingId } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
 
-  const localVideoRef = useRef(null);
-  const socketRef = useRef(null);
+  const [stream, setStream] = useState(null);
+  const [peers, setPeers] = useState({});
   const [participants, setParticipants] = useState([]);
-  const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const [message, setMessage] = useState("");
+  const [muted, setMuted] = useState(false);
   const [cameraOn, setCameraOn] = useState(true);
-  const [micOn, setMicOn] = useState(true);
+
+  const videoRefs = useRef({});
+  const localVideoRef = useRef(null);
+  const token = localStorage.getItem("token") || "";
+  const username = localStorage.getItem("name") || "Guest";
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return navigate("/");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      alert("Your browser does not support video/audio.");
+      return;
+    }
 
-    // connect to signaling server
-    socketRef.current = io("/", { path: "/socket.io" });
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then((mediaStream) => {
+        setStream(mediaStream);
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = mediaStream;
+        }
+        socket.emit("join-meeting", { meetingId: id, username, token });
+      })
+      .catch((err) => {
+        console.error("getUserMedia error", err);
+        alert("Permission denied or no media devices found.");
+      });
 
-    // join room
-    socketRef.current.emit("join-meeting", {
-      meetingId,
-      username: "user", // update to actual username if available
-      token,
+    socket.on("participants-updated", (users) => {
+      setParticipants(users.filter((u) => u.id !== socket.id));
     });
 
-    // handle events
-    socketRef.current.on("participants-updated", (users) => {
-      setParticipants(users);
+    socket.on("user-joined", ({ userId }) => {
+      if (!stream) return;
+      const peer = new Peer({ initiator: true, trickle: false, stream });
+      peer.on("signal", (signal) => {
+        socket.emit("signal", { signal, userId, meetingId: id, token });
+      });
+      peer.on("stream", (remoteStream) => {
+        if (videoRefs.current[userId]) {
+          videoRefs.current[userId].srcObject = remoteStream;
+        }
+      });
+      setPeers((prev) => ({ ...prev, [userId]: peer }));
     });
 
-    socketRef.current.on("chat-message", ({ username, message }) => {
-      setChat((prev) => [...prev, { username, message }]);
-    });
-
-    // get video/audio
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
+    socket.on("signal", ({ userId, signal }) => {
+      if (!peers[userId] && stream) {
+        const peer = new Peer({ initiator: false, trickle: false, stream });
+        peer.on("signal", (s) => {
+          socket.emit("signal", { signal: s, userId, meetingId: id, token });
+        });
+        peer.on("stream", (remoteStream) => {
+          if (videoRefs.current[userId]) {
+            videoRefs.current[userId].srcObject = remoteStream;
+          }
+        });
+        peer.signal(signal);
+        setPeers((prev) => ({ ...prev, [userId]: peer }));
+      } else if (peers[userId]) {
+        peers[userId].signal(signal);
       }
     });
 
-    return () => {
-      socketRef.current.disconnect();
-    };
-  }, [meetingId, navigate]);
+    socket.on("user-left", ({ userId }) => {
+      if (peers[userId]) {
+        peers[userId].destroy();
+        const updated = { ...peers };
+        delete updated[userId];
+        setPeers(updated);
+      }
+    });
 
-  const sendMessage = () => {
+    socket.on("chat-message", ({ username, message }) => {
+      setChat((prev) => [...prev, { sender: username, text: message }]);
+    });
+
+    return () => {
+      socket.emit("leave-meeting", { meetingId: id, token });
+      socket.disconnect();
+      Object.values(peers).forEach((p) => p.destroy());
+    };
+  }, [stream]);
+
+  const handleSend = () => {
     if (message.trim()) {
-      socketRef.current.emit("chat-message", {
-        meetingId,
-        username: "user",
-        message,
-      });
+      socket.emit("chat-message", { meetingId: id, message, username });
+      setChat((prev) => [...prev, { sender: "You", text: message }]);
       setMessage("");
     }
   };
 
-  const toggleCamera = () => setCameraOn((prev) => !prev);
-  const toggleMic = () => setMicOn((prev) => !prev);
+  const toggleMute = () => {
+    if (stream) {
+      stream.getAudioTracks().forEach((track) => (track.enabled = muted));
+      setMuted(!muted);
+    }
+  };
+
+  const toggleCamera = () => {
+    if (stream) {
+      stream.getVideoTracks().forEach((track) => (track.enabled = !cameraOn));
+      setCameraOn(!cameraOn);
+    }
+  };
+
+  const startScreenShare = async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      Object.values(peers).forEach((peer) => {
+        const sender = peer._pc.getSenders().find((s) => s.track.kind === "video");
+        if (sender) sender.replaceTrack(screenTrack);
+      });
+      screenTrack.onended = () => toggleCamera();
+    } catch (err) {
+      console.error("Screen sharing failed", err);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-900 text-gray-100 p-6">
-      <h1 className="text-2xl font-bold text-violet-400 mb-4">Meeting: {meetingId}</h1>
+    <div className="flex flex-col min-h-screen bg-gray-900 text-white">
+      <h2 className="text-xl font-bold p-4">Meeting ID: {id}</h2>
 
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 space-y-4">
-          <video
-            ref={localVideoRef}
-            autoPlay
-            muted
-            className="w-full rounded-lg border border-gray-700"
-          />
-
-          <div className="flex gap-4 justify-center">
-            <button onClick={toggleCamera} className="bg-violet-600 px-4 py-2 rounded">
-              {cameraOn ? "Turn Off Camera" : "Turn On Camera"}
-            </button>
-            <button onClick={toggleMic} className="bg-violet-600 px-4 py-2 rounded">
-              {micOn ? "Mute" : "Unmute"}
-            </button>
+      <div className="flex flex-1 overflow-hidden">
+        {/* Video Grid */}
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4 overflow-auto">
+          <div className="relative border rounded bg-black aspect-video">
+            <video ref={localVideoRef} autoPlay muted playsInline className="w-full h-full object-cover" />
+            <span className="absolute bottom-1 left-1 bg-black/60 px-2 py-1 text-xs rounded">You</span>
           </div>
 
-          <div className="bg-gray-800 rounded p-4">
-            <h2 className="text-lg font-semibold mb-2">Participants</h2>
-            <ul className="space-y-1 text-sm">
-              {participants.map((user) => (
-                <li key={user.id} className="text-violet-300">
-                  {user.username || "User"}
-                </li>
-              ))}
-            </ul>
-          </div>
+          {participants.map((p) => (
+            <div key={p.id} className="relative border rounded bg-black aspect-video">
+              <video
+                ref={(el) => (videoRefs.current[p.id] = el)}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+              <span className="absolute bottom-1 left-1 bg-black/60 px-2 py-1 text-xs rounded">{p.username}</span>
+            </div>
+          ))}
         </div>
 
-        <div className="w-full lg:w-1/3 bg-gray-800 rounded p-4 space-y-4">
-          <h2 className="text-lg font-semibold">Chat</h2>
-          <div className="h-64 overflow-y-auto space-y-2">
-            {chat.map((msg, idx) => (
-              <div key={idx}>
-                <span className="font-bold text-violet-300">{msg.username}:</span>{" "}
-                {msg.message}
+        {/* Sidebar */}
+        <div className="w-80 border-l border-gray-700 p-4 flex flex-col bg-gray-800">
+          <h3 className="font-bold mb-2">Chat</h3>
+          <div className="flex-1 overflow-auto border rounded p-2 bg-gray-900 mb-2 text-sm">
+            {chat.map((msg, i) => (
+              <div key={i}>
+                <strong>{msg.sender}:</strong> {msg.text}
               </div>
             ))}
           </div>
           <div className="flex gap-2">
             <input
-              className="flex-1 px-2 py-1 rounded bg-gray-700"
-              placeholder="Type a message"
+              className="flex-1 p-2 rounded bg-gray-700 text-white"
+              placeholder="Type message..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             />
-            <button onClick={sendMessage} className="bg-violet-600 px-4 py-1 rounded">
-              Send
-            </button>
+            <button onClick={handleSend}>📨</button>
           </div>
         </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex justify-center gap-4 p-4 border-t border-gray-800 bg-gray-900">
+        <button onClick={toggleMute}>{muted ? "🔇 Unmute" : "🎤 Mute"}</button>
+        <button onClick={toggleCamera}>{cameraOn ? "🎥 Stop Video" : "📷 Start Video"}</button>
+        <button onClick={startScreenShare}>🖥️ Share Screen</button>
+        <button className="bg-red-600 px-4 py-2 rounded hover:bg-red-700" onClick={() => navigate("/")}>🚪 Leave</button>
       </div>
     </div>
   );

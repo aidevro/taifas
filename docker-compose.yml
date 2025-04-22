@@ -81,7 +81,11 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.auth.rule=PathPrefix(`/auth`)"
       - "traefik.http.routers.auth.entrypoints=web"
+      - "traefik.http.routers.auth.middlewares=auth-strip"
       - "traefik.http.services.auth.loadbalancer.server.port=3001"
+      - "traefik.http.middlewares.auth-strip.stripprefix.prefixes=/auth"
+    ports:
+      - "3001:3001"
     networks:
       - taifas-net
     healthcheck:
@@ -104,6 +108,10 @@ services:
       - "traefik.http.routers.streaming.rule=PathPrefix(`/socket.io`)"
       - "traefik.http.routers.streaming.entrypoints=web"
       - "traefik.http.services.streaming.loadbalancer.server.port=3002"
+      - "traefik.http.routers.streaming.service=streaming"
+      - "traefik.http.routers.streaming.middlewares=websocket"
+      - "traefik.http.middlewares.websocket.headers.customrequestheaders.Connection=upgrade"
+      - "traefik.http.middlewares.websocket.headers.customrequestheaders.Upgrade=websocket"
     networks:
       - taifas-net
     healthcheck:

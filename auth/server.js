@@ -7,6 +7,7 @@ const Redis = require('ioredis');
 const cors = require('cors');
 
 const app = express();
+const router = express.Router();
 app.use(cors());
 app.use(express.json());
 
@@ -36,7 +37,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-app.post('/register', async (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
@@ -52,7 +53,7 @@ app.post('/register', async (req, res) => {
   }
 });
 
-app.post('/login', async (req, res) => {
+router.post('/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const user = await User.findOne({ username });
@@ -68,7 +69,7 @@ app.post('/login', async (req, res) => {
   }
 });
 
-app.post('/verify', async (req, res) => {
+router.post('/verify', async (req, res) => {
   try {
     const { token } = req.body;
     const decoded = jwt.verify(token, JWT_SECRET);
@@ -83,7 +84,7 @@ app.post('/verify', async (req, res) => {
   }
 });
 
-app.get('/health', async (req, res) => {
+router.get('/health', async (req, res) => {
   try {
     await mongoose.connection.db.admin().ping();
     await redis.ping();
@@ -94,6 +95,26 @@ app.get('/health', async (req, res) => {
   }
 });
 
+router.get("/me", async (req, res) => {
+  try {
+    const auth = req.headers.authorization;
+    const token = auth?.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const stored = await redis.get(`session:${decoded.username}`);
+    if (stored !== token) return res.status(401).json({ error: "Invalid session" });
+
+    const user = await User.findOne({ username: decoded.username });
+    res.json({ username: user.username, role: user.role || "user" });
+  } catch (err) {
+    console.error("❌ /me failed:", err.message);
+    res.status(401).json({ error: "Invalid token" });
+  }
+});
+
+app.use('/', router);
+
+
 app.listen(3001, () => {
   console.log('🚀 Auth service running on port 3001');
 });
+
